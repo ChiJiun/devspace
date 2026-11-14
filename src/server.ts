@@ -23,6 +23,9 @@ import {
   registerArtifactTools,
 } from "./artifact-tools.js";
 import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
+import { allowsShell, allowsWorktrees, allowsWrites, describeAccessMode } from "./access.js";
+import { loadLatestHandoff, registerHandoffTool } from "./handoff.js";
+import { detectCheckCommands } from "./project-checks.js";
 import {
   createOpenAIIncomingArtifactAdapter,
   type IncomingArtifactAdapter,
@@ -194,6 +197,14 @@ interface ToolLogFields {
 }
 
 function serverInstructions(config: ServerConfig): string {
+  const access = describeAccessMode(config.access);
+  const handoff = config.handoffEnabled
+    ? " Before the user ends a task or starts a new chat, call save_handoff with the goal, what is done, key decisions, and next steps; open_workspace returns the latest handoff for a project."
+    : "";
+  return `${baseServerInstructions(config)}${access ? ` ${access}` : ""}${handoff}`;
+}
+
+function baseServerInstructions(config: ServerConfig): string {
   const artifactInstruction = config.artifactsEnabled && isArtifactDownloadSupportedPlatform()
     ? " When the user supplies or generates a file that is not present on the DevSpace host, use download_artifact with its native file value, the existing workspace ID, and a suitable relative destination path chosen from the user's request and project structure. The tool refuses to overwrite an existing destination and returns the normalized workspace-relative path. Use normal workspace tools when explicit inspection, replacement, movement, renaming, or deletion is needed. Do not recreate binary files with write/edit calls or place signed URLs, native file objects, base64 content, or invented host paths in shell commands or logs."
     : "";
@@ -801,6 +812,10 @@ export function createMcpServer(
         agentProviders: z.array(workspaceLocalAgentProviderOutputSchema).optional(),
         agents: z.array(workspaceLocalAgentOutputSchema).optional(),
         skillDiagnostics: z.array(z.unknown()).optional(),
+        checkCommands: z.array(z.string()).optional(),
+        handoff: z
+          .object({ savedAt: z.string(), markdown: z.string(), truncated: z.boolean() })
+          .optional(),
         instruction: z.string(),
       },
       ...toolWidgetDescriptorMeta(config, "workspace"),
@@ -808,6 +823,9 @@ export function createMcpServer(
     },
     async ({ path, mode, baseRef }, { _meta }) => {
       const startedAt = performance.now();
+      if (mode === "worktree" && !allowsWorktrees(config.access)) {
+        throw new Error("Worktree mode is disabled because this DevSpace server runs with DEVSPACE_ACCESS=readonly.");
+      }
       const {
         workspace,
         agentsFiles,
@@ -856,6 +874,12 @@ export function createMcpServer(
       const visibleAgentProviders = includeBootstrapContext ? cardAgentProviders : [];
       const visibleAgents = includeBootstrapContext ? cardAgents : [];
       const loadedAgentsFiles = includeBootstrapContext ? cardAgentsFiles : [];
+      const checkCommands = includeBootstrapContext
+        ? await detectCheckCommands(workspace.root).catch(() => [] as string[])
+        : [];
+      const handoff = includeBootstrapContext && config.handoffEnabled
+        ? await loadLatestHandoff(config.stateDir, workspace.sourceRoot ?? workspace.root).catch(() => undefined)
+        : undefined;
       const availableAgentsFileOutputs = includeBootstrapContext ? cardAvailableAgentsFiles : [];
       const cardInstruction = config.skillsEnabled
         ? "Use this workspaceId for subsequent work in this project. Keep reusing it while working in this project. Follow loaded agentsFiles instructions. Before working under a path listed in availableAgentsFiles, read that instruction file. When a task matches an available skill in skills, read its path before proceeding."
@@ -895,6 +919,11 @@ export function createMcpServer(
             visibleAgents.length > 0
               ? `Available subagent profiles: ${visibleAgents.map(formatVisibleAgent).join(", ")}`
               : undefined,
+            checkCommands.length > 0
+              ? `Suggested check commands (detected from project files, not verified): ${checkCommands.join("; ")}`
+              : undefined,
+            handoff ? `Previous handoff (saved ${handoff.savedAt}):
+${handoff.markdown}` : undefined,
             instruction,
           ].filter(Boolean).join("\n"),
         },
@@ -950,6 +979,8 @@ export function createMcpServer(
                 agentProviders: visibleAgentProviders,
                 agents: visibleAgents,
                 skillDiagnostics: workspace.skillDiagnostics,
+                checkCommands,
+                handoff,
               }
             : {}),
           instruction,
@@ -1055,7 +1086,7 @@ export function createMcpServer(
     },
   );
 
-  if (config.toolMode !== "codex") {
+  if (config.toolMode !== "codex" && allowsWrites(config.access)) {
   registerAppTool(
     server,
     toolNames.write,
@@ -1221,7 +1252,7 @@ export function createMcpServer(
   );
   }
 
-  if (config.toolMode === "codex") {
+  if (config.toolMode === "codex" && allowsWrites(config.access)) {
     registerAppTool(
       server,
       "apply_patch",
@@ -1562,7 +1593,7 @@ export function createMcpServer(
     );
   }
 
-  if (config.toolMode !== "codex") {
+  if (config.toolMode !== "codex" && allowsShell(config.access)) {
   registerAppTool(
     server,
     toolNames.shell,
@@ -1654,7 +1685,7 @@ export function createMcpServer(
   );
   }
 
-  if (config.toolMode === "codex") {
+  if (config.toolMode === "codex" && allowsShell(config.access)) {
     registerCodexProcessTools(server, config, workspaces, processSessions);
   }
 
@@ -1664,6 +1695,10 @@ export function createMcpServer(
       workspaces,
       incomingArtifactAdapters,
     });
+  }
+
+  if (config.handoffEnabled) {
+    registerHandoffTool(server, { config, workspaces });
   }
 
   return server;
