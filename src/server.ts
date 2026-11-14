@@ -23,6 +23,7 @@ import {
   registerArtifactTools,
 } from "./artifact-tools.js";
 import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
+import { registerAnalysisTools } from "./analysis-tools.js";
 import { loadLatestHandoff, registerHandoffTool } from "./handoff.js";
 import { detectCheckCommands } from "./project-checks.js";
 import {
@@ -199,7 +200,10 @@ function serverInstructions(config: ServerConfig): string {
   const handoff = config.handoffEnabled
     ? " Before the user ends a task or starts a new chat, call save_handoff with the goal, what is done, key decisions, and next steps; open_workspace returns the latest handoff for a project."
     : "";
-  return `${baseServerInstructions(config)}${handoff}`;
+  const analysis = config.analysisEnabled
+    ? " For an unfamiliar project, call inspect_workspace first for a project map; use search_code to find definitions, references, and tests, and review_impact after edits to see what to verify."
+    : "";
+  return `${baseServerInstructions(config)}${analysis}${handoff}`;
 }
 
 function baseServerInstructions(config: ServerConfig): string {
@@ -1694,6 +1698,10 @@ ${handoff.markdown}` : undefined,
 
   if (config.handoffEnabled) {
     registerHandoffTool(server, { config, workspaces });
+  }
+
+  if (config.analysisEnabled) {
+    registerAnalysisTools(server, { config, workspaces });
   }
 
   return server;

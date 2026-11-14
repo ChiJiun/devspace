@@ -21,6 +21,7 @@ export interface ServerConfig {
   publicBaseUrl: string;
   toolMode: ToolMode;
   handoffEnabled: boolean;
+  analysisEnabled: boolean;
   widgets: WidgetMode;
   stateDir: string;
   worktreeRoot: string;
@@ -234,6 +235,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     publicBaseUrl,
     toolMode: parseToolMode(env),
     handoffEnabled: env.DEVSPACE_HANDOFF === undefined ? true : parseBoolean(env.DEVSPACE_HANDOFF),
+    analysisEnabled: env.DEVSPACE_ANALYSIS === undefined ? true : parseBoolean(env.DEVSPACE_ANALYSIS),
     widgets: parseWidgetMode(env.DEVSPACE_WIDGETS),
     stateDir: resolve(expandHomePath(env.DEVSPACE_STATE_DIR ?? files.config.stateDir ?? defaultStateDir())),
     worktreeRoot: resolve(expandHomePath(env.DEVSPACE_WORKTREE_ROOT ?? files.config.worktreeRoot ?? defaultWorktreeRoot())),

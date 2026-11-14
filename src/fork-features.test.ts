@@ -148,3 +148,33 @@ test("save_handoff 存檔後，新對話開同一專案會帶回交接內容", a
   const repeated = await open(client, project, "chat-2");
   assert.doesNotMatch(text(repeated), /Previous handoff/);
 });
+
+test("程式碼智慧工具可呼叫，且能用 DEVSPACE_ANALYSIS=0 關閉", async (t) => {
+  const { client, project } = await fixture(t);
+  const tools = await toolNames(client);
+  for (const name of ["inspect_workspace", "search_code", "review_impact"]) {
+    assert.ok(tools.includes(name), `應有 ${name}`);
+  }
+  assert.match(client.getInstructions() ?? "", /inspect_workspace/);
+
+  const opened = await open(client, project, "chat-1");
+  const workspaceId = (opened.structuredContent as { workspaceId: string }).workspaceId;
+  const inspected = await client.callTool({ name: "inspect_workspace", arguments: { workspaceId } });
+  assert.ok(!(inspected as { isError?: boolean }).isError);
+  assert.match(text(inspected), /Project types: node/);
+
+  const searched = await client.callTool({ name: "search_code", arguments: { workspaceId, query: "vitest" } });
+  assert.ok(!(searched as { isError?: boolean }).isError);
+  assert.match(text(searched), /package\.json/);
+
+  const impact = await client.callTool({
+    name: "review_impact",
+    arguments: { workspaceId, changedPaths: ["package.json"] },
+  });
+  assert.match(text(impact), /Risk signals/);
+
+  const off = await fixture(t, { DEVSPACE_ANALYSIS: "0" });
+  const offTools = await toolNames(off.client);
+  assert.ok(!offTools.includes("inspect_workspace") && !offTools.includes("search_code"));
+  assert.doesNotMatch(off.client.getInstructions() ?? "", /inspect_workspace/);
+});
