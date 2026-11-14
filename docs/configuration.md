@@ -38,7 +38,6 @@ npx @waishnav/devspace config set publicBaseUrl https://devspace.example.com
 | `DEVSPACE_OAUTH_OWNER_TOKEN` | Owner password for OAuth approval. Must be at least 16 characters. |
 | `DEVSPACE_WORKTREE_ROOT` | Directory for managed Git worktrees. Defaults to `~/.devspace/worktrees`. |
 | `DEVSPACE_STATE_DIR` | Directory for SQLite state. Defaults to `~/.local/share/devspace`. |
-| `DEVSPACE_ACCESS` | `full` (default), `no-shell` (no shell tools), or `readonly` (no write, patch, shell, or worktree). Fork feature; see [fork-enhancements.md](fork-enhancements.md). |
 | `DEVSPACE_HANDOFF` | Set to `0` to disable the `save_handoff` tool and handoff injection in `open_workspace`. Defaults to on. Fork feature. |
 
 ## Native Artifact Download

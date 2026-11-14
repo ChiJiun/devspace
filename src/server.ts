@@ -23,7 +23,6 @@ import {
   registerArtifactTools,
 } from "./artifact-tools.js";
 import { loadConfig, type ServerConfig, type WidgetMode } from "./config.js";
-import { allowsShell, allowsWorktrees, allowsWrites, describeAccessMode } from "./access.js";
 import { loadLatestHandoff, registerHandoffTool } from "./handoff.js";
 import { detectCheckCommands } from "./project-checks.js";
 import {
@@ -197,11 +196,10 @@ interface ToolLogFields {
 }
 
 function serverInstructions(config: ServerConfig): string {
-  const access = describeAccessMode(config.access);
   const handoff = config.handoffEnabled
     ? " Before the user ends a task or starts a new chat, call save_handoff with the goal, what is done, key decisions, and next steps; open_workspace returns the latest handoff for a project."
     : "";
-  return `${baseServerInstructions(config)}${access ? ` ${access}` : ""}${handoff}`;
+  return `${baseServerInstructions(config)}${handoff}`;
 }
 
 function baseServerInstructions(config: ServerConfig): string {
@@ -823,9 +821,6 @@ export function createMcpServer(
     },
     async ({ path, mode, baseRef }, { _meta }) => {
       const startedAt = performance.now();
-      if (mode === "worktree" && !allowsWorktrees(config.access)) {
-        throw new Error("Worktree mode is disabled because this DevSpace server runs with DEVSPACE_ACCESS=readonly.");
-      }
       const {
         workspace,
         agentsFiles,
@@ -1086,7 +1081,7 @@ ${handoff.markdown}` : undefined,
     },
   );
 
-  if (config.toolMode !== "codex" && allowsWrites(config.access)) {
+  if (config.toolMode !== "codex") {
   registerAppTool(
     server,
     toolNames.write,
@@ -1252,7 +1247,7 @@ ${handoff.markdown}` : undefined,
   );
   }
 
-  if (config.toolMode === "codex" && allowsWrites(config.access)) {
+  if (config.toolMode === "codex") {
     registerAppTool(
       server,
       "apply_patch",
@@ -1593,7 +1588,7 @@ ${handoff.markdown}` : undefined,
     );
   }
 
-  if (config.toolMode !== "codex" && allowsShell(config.access)) {
+  if (config.toolMode !== "codex") {
   registerAppTool(
     server,
     toolNames.shell,
@@ -1685,7 +1680,7 @@ ${handoff.markdown}` : undefined,
   );
   }
 
-  if (config.toolMode === "codex" && allowsShell(config.access)) {
+  if (config.toolMode === "codex") {
     registerCodexProcessTools(server, config, workspaces, processSessions);
   }
 

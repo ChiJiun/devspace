@@ -96,63 +96,13 @@ function text(result: Awaited<ReturnType<Client["callTool"]>>): string {
   return content.filter((item) => item.type === "text").map((item) => item.text ?? "").join("\n");
 }
 
-test("DEVSPACE_ACCESS 控制暴露的工具", async (t) => {
+test("伺服器說明提到交接，且一律提供完整工具", async (t) => {
   const full = await fixture(t);
-  const fullTools = await toolNames(full.client);
-  for (const name of ["open_workspace", "read", "write", "edit", "bash", "save_handoff"]) {
-    assert.ok(fullTools.includes(name), `full 模式應有 ${name}`);
+  assert.match(full.client.getInstructions() ?? "", /save_handoff/);
+  const tools = await toolNames(full.client);
+  for (const name of ["write", "edit", "bash"]) {
+    assert.ok(tools.includes(name), `應有 ${name}`);
   }
-
-  const noShell = await fixture(t, { DEVSPACE_ACCESS: "no-shell" });
-  const noShellTools = await toolNames(noShell.client);
-  assert.ok(noShellTools.includes("write") && noShellTools.includes("edit"));
-  assert.ok(!noShellTools.includes("bash"));
-
-  const readonly = await fixture(t, { DEVSPACE_ACCESS: "readonly" });
-  const readonlyTools = await toolNames(readonly.client);
-  for (const name of ["write", "edit", "bash", "apply_patch", "exec_command", "write_stdin"]) {
-    assert.ok(!readonlyTools.includes(name), `readonly 不應有 ${name}`);
-  }
-  assert.ok(readonlyTools.includes("read") && readonlyTools.includes("open_workspace"));
-
-  const readonlyCodex = await fixture(t, { DEVSPACE_ACCESS: "readonly", DEVSPACE_TOOL_MODE: "codex" });
-  const codexTools = await toolNames(readonlyCodex.client);
-  assert.ok(!codexTools.includes("apply_patch") && !codexTools.includes("exec_command"));
-
-  const fullCodex = await fixture(t, { DEVSPACE_TOOL_MODE: "codex" });
-  const fullCodexTools = await toolNames(fullCodex.client);
-  assert.ok(fullCodexTools.includes("apply_patch") && fullCodexTools.includes("exec_command"));
-
-  const noShellCodex = await fixture(t, { DEVSPACE_ACCESS: "no-shell", DEVSPACE_TOOL_MODE: "codex" });
-  const noShellCodexTools = await toolNames(noShellCodex.client);
-  assert.ok(noShellCodexTools.includes("apply_patch"));
-  assert.ok(!noShellCodexTools.includes("exec_command") && !noShellCodexTools.includes("write_stdin"));
-});
-
-test("DEVSPACE_ACCESS 錯誤值在載入設定時就失敗", () => {
-  assert.throws(
-    () => loadConfig({ DEVSPACE_ACCESS: "root", DEVSPACE_OAUTH_OWNER_TOKEN: "x".repeat(20) }),
-    /Invalid DEVSPACE_ACCESS/,
-  );
-});
-
-test("readonly 模式拒絕 worktree，仍可正常開 checkout", async (t) => {
-  const { client, project } = await fixture(t, { DEVSPACE_ACCESS: "readonly" }, { git: true });
-  const opened = await open(client, project, "chat-1");
-  assert.ok(!(opened as { isError?: boolean }).isError);
-  const worktree = await open(client, project, "chat-2", "worktree").then(
-    (result) => ({ result }),
-    (error: unknown) => ({ error }),
-  );
-  const failed = "error" in worktree || (worktree.result as { isError?: boolean }).isError === true;
-  assert.ok(failed, "readonly 模式不該建立 worktree");
-});
-
-test("伺服器說明會依模式補充限制與交接提示", async (t) => {
-  const readonly = await fixture(t, { DEVSPACE_ACCESS: "readonly" });
-  const instructions = readonly.client.getInstructions() ?? "";
-  assert.match(instructions, /read-only/);
-  assert.match(instructions, /save_handoff/);
 
   const noHandoff = await fixture(t, { DEVSPACE_HANDOFF: "0" });
   assert.doesNotMatch(noHandoff.client.getInstructions() ?? "", /save_handoff/);
@@ -197,12 +147,4 @@ test("save_handoff 存檔後，新對話開同一專案會帶回交接內容", a
   // 同一個對話再開一次（重用 workspace）不重複塞入交接內容
   const repeated = await open(client, project, "chat-2");
   assert.doesNotMatch(text(repeated), /Previous handoff/);
-});
-
-test("readonly 模式仍可儲存交接（只寫狀態目錄，不動專案）", async (t) => {
-  const { client, project } = await fixture(t, { DEVSPACE_ACCESS: "readonly" });
-  const first = await open(client, project, "chat-1");
-  const workspaceId = (first.structuredContent as { workspaceId: string }).workspaceId;
-  const saved = await client.callTool({ name: "save_handoff", arguments: { workspaceId, goal: "唯讀審查" } });
-  assert.ok(!(saved as { isError?: boolean }).isError);
 });
