@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
+import {
+  parseWslWorkspacePath,
+  resolveShellCommand,
+  resolveWslShellCommand,
+  terminateProcessTree,
+} from "./process-platform.js";
 
 assert.deepEqual(resolveShellCommand("echo ok", "win32", { ComSpec: "C:\\Windows\\cmd.exe" }), {
   executable: "C:\\Windows\\cmd.exe",
@@ -20,6 +25,43 @@ assert.deepEqual(resolveShellCommand("echo ok", "linux", { SHELL: "/usr/bin/fish
   executable: "/bin/sh",
   args: ["-c", "echo ok"],
 });
+
+assert.deepEqual(
+  parseWslWorkspacePath("\\\\wsl.localhost\\Ubuntu\\home\\user\\project", "win32"),
+  { distro: "Ubuntu", linuxPath: "/home/user/project" },
+);
+assert.deepEqual(
+  parseWslWorkspacePath("\\\\wsl$\\Ubuntu-24.04\\home\\user\\project", "win32"),
+  { distro: "Ubuntu-24.04", linuxPath: "/home/user/project" },
+);
+assert.equal(
+  parseWslWorkspacePath("\\\\server\\share\\project", "win32"),
+  undefined,
+);
+assert.equal(
+  parseWslWorkspacePath("\\\\wsl.localhost\\Ubuntu\\home\\user\\project", "linux"),
+  undefined,
+);
+assert.deepEqual(
+  resolveWslShellCommand(
+    "npm test",
+    "\\\\wsl.localhost\\Ubuntu\\home\\user\\project",
+    "win32",
+  ),
+  {
+    executable: "wsl.exe",
+    args: [
+      "-d",
+      "Ubuntu",
+      "--cd",
+      "/home/user/project",
+      "--",
+      "bash",
+      "-lc",
+      "npm test",
+    ],
+  },
+);
 
 const windowsCalls: string[] = [];
 terminateProcessTree(

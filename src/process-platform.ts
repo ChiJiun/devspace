@@ -6,6 +6,41 @@ export interface ShellCommand {
   args: string[];
 }
 
+export interface WslWorkspacePath {
+  distro: string;
+  linuxPath: string;
+}
+
+export function parseWslWorkspacePath(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): WslWorkspacePath | undefined {
+  if (platform !== "win32") return undefined;
+
+  const normalized = path.replaceAll("/", "\\");
+  const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)(?:\\(.*))?$/i.exec(normalized);
+  if (!match) return undefined;
+
+  const distro = match[1];
+  const tail = match[2] ?? "";
+  const linuxPath = tail ? `/${tail.replaceAll("\\", "/")}` : "/";
+  return { distro, linuxPath };
+}
+
+export function resolveWslShellCommand(
+  command: string,
+  cwd: string,
+  platform: NodeJS.Platform = process.platform,
+): ShellCommand | undefined {
+  const workspace = parseWslWorkspacePath(cwd, platform);
+  if (!workspace) return undefined;
+
+  return {
+    executable: "wsl.exe",
+    args: ["-d", workspace.distro, "--cd", workspace.linuxPath, "--", "bash", "-lc", command],
+  };
+}
+
 export interface KillableProcess {
   pid?: number;
   kill(signal?: NodeJS.Signals): boolean;

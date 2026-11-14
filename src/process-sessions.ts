@@ -1,5 +1,9 @@
 import { spawn } from "node:child_process";
-import { resolveShellCommand, terminateProcessTree } from "./process-platform.js";
+import {
+  resolveShellCommand,
+  resolveWslShellCommand,
+  terminateProcessTree,
+} from "./process-platform.js";
 
 const DEFAULT_EXEC_YIELD_MS = 10_000;
 const DEFAULT_INTERACTIVE_YIELD_MS = 250;
@@ -323,19 +327,28 @@ export class ProcessSessionManager {
   }
 
   private startPipe(session: ProcessSession, input: StartCommandInput): void {
-    const shell = resolveShellCommand(input.command);
+    const wslShell = resolveWslShellCommand(input.command, input.cwd);
+    const shell = wslShell ?? resolveShellCommand(input.command);
     const detached = process.platform !== "win32";
-    const child = spawn(input.command, {
-      cwd: input.cwd,
-      env: processEnvironment({
-        workspaceId: input.workspaceId,
-        workspaceRoot: input.workspaceRoot,
-      }),
-      stdio: "pipe",
-      windowsHide: true,
-      detached,
-      shell: shell.executable,
+    const environment = processEnvironment({
+      workspaceId: input.workspaceId,
+      workspaceRoot: input.workspaceRoot,
     });
+    const child = wslShell
+      ? spawn(wslShell.executable, wslShell.args, {
+          env: environment,
+          stdio: "pipe",
+          windowsHide: true,
+          detached,
+        })
+      : spawn(input.command, {
+          cwd: input.cwd,
+          env: environment,
+          stdio: "pipe",
+          windowsHide: true,
+          detached,
+          shell: shell.executable,
+        });
 
     session.process = {
       write: (data) => child.stdin.write(data),
